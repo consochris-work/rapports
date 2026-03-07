@@ -2212,6 +2212,51 @@ function appConfirm(message, sub, onOk) {
 }
 
 
+function bootFromSheets(callback) {
+  if (!state.gsUrl) { if (callback) callback(); return; }
+  fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { if (callback) callback(); return; }
+
+      // 1. Techs depuis l'onglet dédié (source de vérité)
+      if (data.technicians && data.technicians.length > 0) {
+        state.technicians = data.technicians;
+      }
+
+      // 2. Rapports — merge sans doublons
+      var existingIds = state.reports.map(function(r) { return r.id; });
+      (data.reports || []).forEach(function(r) {
+        var report = {
+          id:        String(r.id),
+          date:      r.date,
+          tech:      r.tech,
+          client:    r.client || '',
+          atelier:   r.atelier || false,
+          hours:     parseFloat(r.hours) || 0,
+          desc:      r.desc || '',
+          photos:    [],
+          checklist: [],
+          createdAt: r.createdAt || ''
+        };
+        if (!existingIds.includes(report.id)) {
+          state.reports.push(report);
+          existingIds.push(report.id);
+        }
+      });
+
+      // 3. Ajustements
+      Object.keys(data.adjustments || {}).forEach(function(k) {
+        state.adjustments[k] = data.adjustments[k];
+      });
+
+      save();
+      if (callback) callback();
+    })
+    .catch(function() { if (callback) callback(); });
+}
+
+
 function silentPullTechs(callback) {
   if (!state.gsUrl) { if (callback) callback(); return; }
   // Appel dédié getTechs — lit uniquement l'onglet Techniciens dans Sheets
@@ -2386,23 +2431,24 @@ function toast(icon, msg) {
 // ══════════════════════════════════════════════════
 (function init() {
   load();
-  // Toujours forcer l'URL GS (même si localStorage est ancien)
+  // URL GS toujours à jour
   state.gsUrl = 'https://script.google.com/macros/s/AKfycbwElpw171qnm86UUUtG0erw98ordGoypogy0azFpD47ZElOVT5mGO5Nmlnc1meXEp3_nw/exec';
   save();
-  // Récupérer la liste des techs depuis Sheets pour tous (silencieux)
+
   if (state.gsUrl) {
-    silentPullTechs(function() {
+    // Tous les appareils : boot complet depuis Sheets (techs + rapports)
+    bootFromSheets(function() {
       populateTechSelect();
       if (state.currentTech) showApp();
     });
+    // Refresh périodique pour tout le monde
+    setInterval(function() { bootFromSheets(function() {
+      populateTechSelect();
+      if (state.currentTech) renderDashboard();
+    }); }, 5 * 60 * 1000);
   } else {
     populateTechSelect();
     if (state.currentTech) showApp();
-  }
-  // Auto-pull complet silencieux si admin déjà déverrouillé
-  if (state.adminUnlocked && state.gsUrl) {
-    setTimeout(silentPull, 2000); // léger délai pour ne pas bloquer le boot
-    setInterval(silentPull, 5 * 60 * 1000);
   }
 })();
 </script>
