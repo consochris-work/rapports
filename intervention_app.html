@@ -703,6 +703,11 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
         <div class="admin-card">
           <div class="admin-card-title">👷 Techniciens</div>
           <div id="tech-list-admin"></div>
+          <button onclick="forceSyncTechs()" style="width:100%;margin:8px 0;padding:10px;border-radius:10px;
+            background:rgba(1,110,143,.15);border:1px solid rgba(1,110,143,.4);color:var(--accent2);
+            font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">
+            ☁ Synchroniser la liste vers Google Sheets
+          </button>
           <div class="divider"></div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Ajouter un technicien</div>
           <div class="input-inline">
@@ -752,7 +757,7 @@ let state = {
   clients: [],
   reports: [],
   adjustments: {},
-  gsUrl: 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec',
+  gsUrl: 'https://script.google.com/macros/s/AKfycbwElpw171qnm86UUUtG0erw98ordGoypogy0azFpD47ZElOVT5mGO5Nmlnc1meXEp3_nw/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
   pin: '1234',
   accentColor: '#016E8F',
@@ -1329,7 +1334,6 @@ function openDetail(id) {
       <div class="detail-field"><span class="df-label">Lieu</span><span class="df-val">${r.atelier ? '<span style=\"color:var(--green);font-weight:600\">🔧 Atelier</span>' : '—'}</span></div>
       <div class="detail-field"><span class="df-label">Client</span><span class="df-val">${esc(r.client||'—')}</span></div>
       <div class="detail-field"><span class="df-label">Heures passées</span><span class="df-val mono">${parseFloat(r.hours||0).toFixed(1)} h</span></div>
-      <div class="detail-field"><span class="df-label">Heures moteurs</span><span class="df-val mono">${parseFloat(r.motorHours||0).toFixed(1)} h</span></div>
     </div>
     <div class="detail-section">
       <div class="detail-section-title">Description des tâches</div>
@@ -1417,8 +1421,9 @@ function openAdminOverlay() {
   document.getElementById('admin-overlay').classList.add('open');
   populateRecapMonths();
   populatePresenceMonths();
+
   const gsInput = document.getElementById('gs-url-input');
-  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec';
+  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbwElpw171qnm86UUUtG0erw98ordGoypogy0azFpD47ZElOVT5mGO5Nmlnc1meXEp3_nw/exec';
   updateGsStatus();
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
@@ -1866,32 +1871,63 @@ function removeClientAdmin(name) {
 }
 
 function renderTechListAdmin() {
-  const list = document.getElementById('tech-list-admin');
-  list.innerHTML = state.technicians.map((t,i) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div class="tech-avatar" style="background:${techColor(t)};width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0">${techInitials(t)}</div>
-        <span style="font-size:13px">${esc(t)}</span>
-      </div>
-      <button onclick="removeTech(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;">✕</button>
-    </div>`).join('');
+  var list = document.getElementById('tech-list-admin');
+  if (state.technicians.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0">Aucun technicien — chargement depuis Sheets...</div>';
+    return;
+  }
+  list.innerHTML = state.technicians.map(function(t,i) {
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<div class="tech-avatar" style="background:'+techColor(t)+';width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0">'+techInitials(t)+'</div>'
+      + '<span style="font-size:13px">'+esc(t)+'</span>'
+      + '</div>'
+      + '<button onclick="removeTech('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;">✕</button>'
+      + '</div>';
+  }).join('');
 }
 
 function addTechFromAdmin() {
-  let name = document.getElementById('new-tech-input').value.trim();
+  var name = document.getElementById('new-tech-input').value.trim();
   if (!name) return;
-  name = name.split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');
-  if (!state.technicians.includes(name)) { state.technicians.push(name); save(); }
-  document.getElementById('new-tech-input').value = '';
-  renderTechListAdmin();
-  toast('✅', `${name} ajouté`);
+  name = name.split(' ').map(function(w){return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();}).join(' ');
+  if (state.technicians.includes(name)) { toast('⚠️', name + ' existe déjà'); return; }
+
+  // Ajouter dans Sheets en premier (source de vérité), puis mettre à jour local
+  if (!state.gsUrl) { toast('⚠️','Aucune URL Sheets configurée'); return; }
+  var newList = state.technicians.concat([name]);
+  fetch(state.gsUrl + '?action=saveTechs&token=' + encodeURIComponent(state.gsToken)
+    + '&data=' + encodeURIComponent(JSON.stringify({ technicians: newList })))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { toast('❌', data.error); return; }
+      state.technicians = newList;
+      save();
+      document.getElementById('new-tech-input').value = '';
+      renderTechListAdmin();
+      populateTechSelect();
+      toast('✅', name + ' ajouté');
+    })
+    .catch(function() { toast('❌','Erreur connexion Sheets'); });
 }
 
 function removeTech(i) {
-  if (!confirm(`Supprimer ${state.technicians[i]} ?`)) return;
-  state.technicians.splice(i,1);
-  save();
-  renderTechListAdmin();
+  var name = state.technicians[i];
+  if (!confirm('Supprimer ' + name + ' ?')) return;
+  if (!state.gsUrl) { toast('⚠️','Aucune URL Sheets configurée'); return; }
+  var newList = state.technicians.filter(function(_,j){ return j !== i; });
+  fetch(state.gsUrl + '?action=saveTechs&token=' + encodeURIComponent(state.gsToken)
+    + '&data=' + encodeURIComponent(JSON.stringify({ technicians: newList })))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { toast('❌', data.error); return; }
+      state.technicians = newList;
+      save();
+      renderTechListAdmin();
+      populateTechSelect();
+      toast('✅', name + ' supprimé');
+    })
+    .catch(function() { toast('❌','Erreur connexion Sheets'); });
 }
 
 function changePin() {
@@ -2133,19 +2169,37 @@ function syncAllToSheets() {
 }
 
 
-function silentPullTechs(callback) {
-  if (!state.gsUrl) { if (callback) callback(); return; }
-  fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
+function forceSyncTechs(silent) {
+  if (!state.gsUrl) { if (!silent) toast('⚠️','Aucune URL configuree'); return; }
+  fetch(state.gsUrl + '?action=saveTechs&token=' + encodeURIComponent(state.gsToken)
+    + '&data=' + encodeURIComponent(JSON.stringify({ technicians: state.technicians })))
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.error || !data.reports) { if (callback) callback(); return; }
-      // Extraire les noms de techs uniques
-      (data.reports || []).forEach(function(r) {
-        if (r.tech && !state.technicians.includes(r.tech)) {
-          state.technicians.push(r.tech);
-        }
-      });
-      save();
+      if (data.error && !silent) { toast('❌', data.error); return; }
+      if (!silent) toast('✅', state.technicians.length + ' techniciens synchronises');
+    })
+    .catch(function() { if (!silent) toast('❌','Erreur connexion'); });
+}
+
+
+function syncTechsToSheets() {
+  if (!state.gsUrl) return;
+  gsPost('saveTechs', { technicians: state.technicians });
+}
+
+
+function silentPullTechs(callback) {
+  if (!state.gsUrl) { if (callback) callback(); return; }
+  // Appel dédié getTechs — lit uniquement l'onglet Techniciens dans Sheets
+  fetch(state.gsUrl + '?action=getTechs&token=' + encodeURIComponent(state.gsToken))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error || !data.technicians) { if (callback) callback(); return; }
+      if (data.technicians.length > 0) {
+        // Sheets est la source de vérité — remplace le cache local
+        state.technicians = data.technicians;
+        save();
+      }
       if (callback) callback();
     })
     .catch(function() { if (callback) callback(); });
@@ -2309,7 +2363,7 @@ function toast(icon, msg) {
 (function init() {
   load();
   // Toujours forcer l'URL GS (même si localStorage est ancien)
-  state.gsUrl = 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec';
+  state.gsUrl = 'https://script.google.com/macros/s/AKfycbwElpw171qnm86UUUtG0erw98ordGoypogy0azFpD47ZElOVT5mGO5Nmlnc1meXEp3_nw/exec';
   save();
   // Récupérer la liste des techs depuis Sheets pour tous (silencieux)
   if (state.gsUrl) {
