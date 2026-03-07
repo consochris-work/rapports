@@ -649,8 +649,9 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn-primary" style="flex:1" onclick="saveGSUrl()">💾 Enregistrer</button>
-            <button class="btn-secondary" style="flex:1" onclick="syncAllToSheets()">⬆ Sync complète</button>
+            <button class="btn-secondary" style="flex:1" onclick="syncAllToSheets()">&#x2B06; Envoyer</button>
           </div>
+          <button class="btn-primary" style="width:100%;margin-top:8px;background:#2ecc71;color:#000" onclick="pullFromSheets()">&#x2B07; Charger depuis Sheets</button>
           <div id="gs-status" style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center"></div>
         </div>
         <div class="admin-card">
@@ -680,7 +681,7 @@ let state = {
   clients: [],
   reports: [],
   adjustments: {},
-  gsUrl: 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec',
+  gsUrl: 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
   pin: '1234',
   accentColor: '#016E8F'
@@ -1323,7 +1324,7 @@ function openAdminOverlay() {
   document.getElementById('admin-overlay').classList.add('open');
   populateRecapMonths();
   const gsInput = document.getElementById('gs-url-input');
-  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec';
+  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec';
   updateGsStatus();
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
@@ -1790,6 +1791,61 @@ function syncAllToSheets() {
   }, 4000);
 }
 
+
+function pullFromSheets() {
+  if (!state.gsUrl) { toast('⚠️','Aucune URL configuree'); return; }
+  var el = document.getElementById('gs-status');
+  if (el) el.innerHTML = '<span style="color:var(--muted)">&#8987; Chargement...</span>';
+
+  fetch(state.gsUrl + '?action=getAll')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { toast('❌', data.error); return; }
+
+      var imported = 0;
+      var existingIds = state.reports.map(function(r) { return r.id; });
+
+      (data.reports || []).forEach(function(r) {
+        // Normalise les champs
+        var report = {
+          id:        String(r.id),
+          date:      r.date,
+          tech:      r.tech,
+          client:    r.client || '',
+          atelier:   r.atelier || false,
+          hours:     parseFloat(r.hours) || 0,
+          desc:      r.desc || '',
+          photos:    [],   // photos non stockées dans Sheets
+          checklist: [],
+          createdAt: r.createdAt || new Date().toISOString()
+        };
+        if (!existingIds.includes(report.id)) {
+          state.reports.push(report);
+          existingIds.push(report.id);
+          imported++;
+        }
+        // Ajouter le tech à la liste si absent
+        if (report.tech && !state.technicians.includes(report.tech)) {
+          state.technicians.push(report.tech);
+        }
+      });
+
+      // Merge les ajustements
+      Object.keys(data.adjustments || {}).forEach(function(k) {
+        state.adjustments[k] = data.adjustments[k];
+      });
+
+      save();
+      updateGsStatus();
+      renderRecap();
+      toast('✅', imported + ' nouveaux rapports importes');
+      if (el) el.innerHTML = '<span style="color:var(--green)">&#10003; ' + imported + ' rapports importes</span>';
+    })
+    .catch(function(e) {
+      toast('❌','Erreur chargement');
+      if (el) el.innerHTML = '<span style="color:#e8252a">&#x2715; Erreur connexion</span>';
+    });
+}
 // ══════════════════════════════════════════════════
 //  EXPORT CSV
 // ══════════════════════════════════════════════════
@@ -1846,7 +1902,7 @@ function toast(icon, msg) {
 (function init() {
   load();
   // Toujours forcer l'URL GS (même si localStorage est ancien)
-  state.gsUrl = 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec';
+  state.gsUrl = 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec';
   save();
   populateTechSelect();
   if (state.currentTech) {
