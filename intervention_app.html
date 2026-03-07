@@ -212,10 +212,12 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
 .tech-card-name{font-size:13px;font-weight:600;}
 
 /* ── REPORT DETAIL ── */
-.detail-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.8);
+.detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);
   backdrop-filter:blur(12px);display:flex;flex-direction:column;opacity:0;
   pointer-events:none;transition:opacity .25s;padding-top:var(--safe-top);}
 .detail-overlay.open{opacity:1;pointer-events:all;}
+#admin-overlay{z-index:100;}
+#detail-overlay{z-index:150;}
 .detail-panel{flex:1;overflow-y:auto;background:var(--surface);border-top:1px solid var(--border);}
 .detail-header{padding:16px 18px;background:rgba(var(--accent-rgb),.08);border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;
@@ -1363,7 +1365,9 @@ function openDetail(id) {
 }
 
 function closeDetail() {
-  document.getElementById('detail-overlay').classList.remove('open');
+  var overlay = document.getElementById('detail-overlay');
+  overlay.classList.remove('open');
+  overlay._fromAdmin = false;
 }
 
 function openFullscreen(reportId, photoIdx) {
@@ -1796,8 +1800,11 @@ function doDeleteReport(reportId, isAdmin) {
 }
 
 function adminOpenReport(reportId) {
-  closeAdminOverlay();
-  setTimeout(() => openDetail(reportId), 50);
+  // Ouvrir le détail par-dessus l'admin sans fermer l'admin
+  openDetail(reportId);
+  // Quand le détail se ferme, s'assurer que l'admin est toujours visible
+  var detailOverlay = document.getElementById('detail-overlay');
+  detailOverlay._fromAdmin = true;
 }
 
 function saveAdjustment(tech, month, val) {
