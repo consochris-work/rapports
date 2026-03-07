@@ -680,7 +680,7 @@ let state = {
   clients: [],
   reports: [],
   adjustments: {},
-  gsUrl: 'https://script.google.com/macros/s/AKfycbydYUraX_DMctXg1K64rDQ3zfQTErXH81veUZElDkAO53p5Zz3TY4gd03N9t995IHhpiQ/exec',
+  gsUrl: 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
   pin: '1234',
   accentColor: '#016E8F'
@@ -769,15 +769,31 @@ function switchView(v) {
 // ══════════════════════════════════════════════════
 function renderDash() {
   const myReports = state.reports.filter(r => r.tech === state.currentTech);
-  const now = new Date(); const m = now.getMonth(); const y = now.getFullYear();
-  const thisMonth = myReports.filter(r => { const d=new Date(r.date); return d.getMonth()===m&&d.getFullYear()===y; });
-  const totalHours = thisMonth.reduce((s,r) => s + (parseFloat(r.hours)||0), 0);
-  const clients = [...new Set(thisMonth.map(r=>r.client))].filter(Boolean);
+
+  // Semaine en cours : lundi → dimanche
+  const now = new Date();
+  const day = now.getDay(); // 0=dim, 1=lun…
+  const diffToMonday = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(now); monday.setDate(now.getDate() + diffToMonday); monday.setHours(0,0,0,0);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23,59,59,999);
+
+  const thisWeek = myReports.filter(r => { const d=new Date(r.date); return d>=monday && d<=sunday; });
+  const weekHours = thisWeek.reduce((s,r) => s + (parseFloat(r.hours)||0), 0);
+  const clients = [...new Set(thisWeek.map(r=>r.client))].filter(Boolean);
+
+  // Label semaine ex: "lun. 03 – dim. 09 mars"
+  const fmtShort = d => d.toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit'});
+  const fmtMonth = d => d.toLocaleDateString('fr-FR',{month:'long'});
+  const weekLabel = `${fmtShort(monday)} – ${fmtShort(sunday)} ${fmtMonth(sunday)}`;
 
   document.getElementById('dash-stats').innerHTML = `
-    <div class="stat-card"><div class="stat-val">${thisMonth.length}</div><div class="stat-lbl">Interventions<br>ce mois</div></div>
-    <div class="stat-card"><div class="stat-val">${totalHours.toFixed(1)}</div><div class="stat-lbl">Heures<br>ce mois</div></div>
-    <div class="stat-card"><div class="stat-val">${clients.length}</div><div class="stat-lbl">Clients<br>différents</div></div>
+    <div class="stat-card" style="grid-column:span 3;padding:10px 14px">
+      <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Semaine en cours</div>
+      <div style="font-size:11px;color:var(--muted)">${weekLabel}</div>
+    </div>
+    <div class="stat-card"><div class="stat-val">${thisWeek.length}</div><div class="stat-lbl">Interventions</div></div>
+    <div class="stat-card"><div class="stat-val">${weekHours.toFixed(2)}</div><div class="stat-lbl">Heures</div></div>
+    <div class="stat-card"><div class="stat-val">${clients.length}</div><div class="stat-lbl">Clients</div></div>
   `;
 
   const list = document.getElementById('dash-list');
@@ -1307,7 +1323,7 @@ function openAdminOverlay() {
   document.getElementById('admin-overlay').classList.add('open');
   populateRecapMonths();
   const gsInput = document.getElementById('gs-url-input');
-  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbydYUraX_DMctXg1K64rDQ3zfQTErXH81veUZElDkAO53p5Zz3TY4gd03N9t995IHhpiQ/exec';
+  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec';
   updateGsStatus();
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
@@ -1697,6 +1713,9 @@ function changePin() {
 
 // ══════════════════════════════════════════════════
 //  GOOGLE SHEETS SYNC
+//  Google Apps Script ne supporte pas le CORS preflight
+//  → on passe par un GET avec paramètre ?payload=...
+//  → ou POST no-cors (pas de réponse lisible, fire & forget)
 // ══════════════════════════════════════════════════
 function saveGSUrl() {
   state.gsUrl = document.getElementById('gs-url-input').value.trim();
@@ -1709,47 +1728,44 @@ function saveGSUrl() {
 function updateGsStatus() {
   const el = document.getElementById('gs-status');
   if (!el) return;
-  if (!state.gsUrl) {
-    el.textContent = '';
-    return;
-  }
+  if (!state.gsUrl) { el.textContent = ''; return; }
   el.innerHTML = state.gsSynced
-    ? '<span style="color:var(--green)">✓ Connecté</span>'
+    ? '<span style="color:var(--green)">✓ Synchronisé</span>'
     : '<span style="color:var(--orange)">⚠ Non synchronisé — cliquez "Sync complète"</span>';
+}
+
+// Envoie via GET (pas de CORS preflight, Google redirige vers doGet)
+async function gsGet(params) {
+  if (!state.gsUrl) return null;
+  const qs = Object.entries(params).map(([k,v]) =>
+    encodeURIComponent(k)+'='+encodeURIComponent(typeof v==='object'?JSON.stringify(v):v)
+  ).join('&');
+  try {
+    const res = await fetch(state.gsUrl + '?' + qs);
+    return await res.json();
+  } catch(e) {
+    console.warn('GS GET failed', e);
+    return null;
+  }
 }
 
 async function syncReportToSheets(report) {
   if (!state.gsUrl) return;
-  try {
-    const payload = Object.assign({}, report, {
-      photos: report.photos ? report.photos.length : 0
-    });
-    await fetch(state.gsUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'addReport', data: payload }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch(e) { console.warn('GS sync report failed', e); }
+  const payload = Object.assign({}, report, {
+    photos: report.photos ? report.photos.length : 0
+  });
+  gsGet({ action: 'addReport', data: payload }); // fire & forget
 }
 
 async function syncAdjToSheets(reportId, report, validatedHours) {
   if (!state.gsUrl) return;
-  try {
-    await fetch(state.gsUrl, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'saveAdjustment',
-        data: {
-          reportId,
-          tech: report.tech,
-          client: report.client || '',
-          date: report.date,
-          validatedHours
-        }
-      }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch(e) { console.warn('GS sync adj failed', e); }
+  gsGet({ action: 'saveAdjustment', data: {
+    reportId,
+    tech: report.tech,
+    client: report.client || '',
+    date: report.date,
+    validatedHours
+  }});
 }
 
 async function syncAllToSheets() {
@@ -1757,28 +1773,23 @@ async function syncAllToSheets() {
   const el = document.getElementById('gs-status');
   if (el) el.innerHTML = '<span style="color:var(--muted)">⏳ Synchronisation en cours…</span>';
 
-  // Strip photo data (trop lourd), garder seulement le nombre
   const reportsClean = state.reports.map(r => Object.assign({}, r, {
     photos: r.photos ? r.photos.length : 0
   }));
 
-  try {
-    const res = await fetch(state.gsUrl, {
-      method: 'POST',
-      body: JSON.stringify({
-        action: 'syncAll',
-        data: { reports: reportsClean, adjustments: state.adjustments }
-      }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    const json = await res.json();
+  const result = await gsGet({
+    action: 'syncAll',
+    data: { reports: reportsClean, adjustments: state.adjustments }
+  });
+
+  if (result && !result.error) {
     state.gsSynced = true;
     save();
     updateGsStatus();
-    toast('✅', `${json.count || reportsClean.length} rapports synchronisés`);
-  } catch(e) {
-    if (el) el.innerHTML = '<span style="color:var(--red)">✕ Erreur de connexion</span>';
-    toast('❌','Échec de la synchronisation');
+    toast('✅', `${result.count || reportsClean.length} rapports synchronisés`);
+  } else {
+    if (el) el.innerHTML = '<span style="color:#e8252a">&#x2715; Erreur connexion</span>';
+    toast('❌', result ? result.error : 'Échec de la synchronisation');
   }
 }
 
@@ -1838,7 +1849,7 @@ function toast(icon, msg) {
 (function init() {
   load();
   // Toujours forcer l'URL GS (même si localStorage est ancien)
-  state.gsUrl = 'https://script.google.com/macros/s/AKfycbydYUraX_DMctXg1K64rDQ3zfQTErXH81veUZElDkAO53p5Zz3TY4gd03N9t995IHhpiQ/exec';
+  state.gsUrl = 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec';
   save();
   populateTechSelect();
   if (state.currentTech) {
