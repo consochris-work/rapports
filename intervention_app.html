@@ -814,7 +814,7 @@ function confirmTech() {
 }
 function changeTech() {
   // Show confirm
-  if (!confirm('Changer de technicien ?')) return;
+  appConfirm('Changer de technicien ?', '', function() { state.currentTech=null; save(); location.reload(); }); return;
   state.currentTech = null;
   save();
   location.reload();
@@ -1864,10 +1864,11 @@ function renderClientListAdmin(filter) {
 }
 
 function removeClientAdmin(name) {
-  if (!confirm(`Supprimer le client "${name}" ?`)) return;
-  state.clients = (state.clients||[]).filter(c=>c!==name);
-  save();
-  renderClientListAdmin(document.getElementById('filter-client-admin')?.value||'');
+  appConfirm('Supprimer ce client ?', name, function() {
+    state.clients = (state.clients||[]).filter(c=>c!==name);
+    save();
+    renderClientListAdmin(document.getElementById('filter-client-admin')?.value||'');
+  });
 }
 
 function renderTechListAdmin() {
@@ -1913,21 +1914,22 @@ function addTechFromAdmin() {
 
 function removeTech(i) {
   var name = state.technicians[i];
-  if (!confirm('Supprimer ' + name + ' ?')) return;
-  if (!state.gsUrl) { toast('⚠️','Aucune URL Sheets configurée'); return; }
-  var newList = state.technicians.filter(function(_,j){ return j !== i; });
-  fetch(state.gsUrl + '?action=saveTechs&token=' + encodeURIComponent(state.gsToken)
-    + '&data=' + encodeURIComponent(JSON.stringify({ technicians: newList })))
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) { toast('❌', data.error); return; }
-      state.technicians = newList;
-      save();
-      renderTechListAdmin();
-      populateTechSelect();
-      toast('✅', name + ' supprimé');
-    })
-    .catch(function() { toast('❌','Erreur connexion Sheets'); });
+  appConfirm('Supprimer ce technicien ?', name, function() {
+    if (!state.gsUrl) { toast('⚠️','Aucune URL Sheets configurée'); return; }
+    var newList = state.technicians.filter(function(_,j){ return j !== i; });
+    fetch(state.gsUrl + '?action=saveTechs&token=' + encodeURIComponent(state.gsToken)
+      + '&data=' + encodeURIComponent(JSON.stringify({ technicians: newList })))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) { toast('❌', data.error); return; }
+        state.technicians = newList;
+        save();
+        renderTechListAdmin();
+        populateTechSelect();
+        toast('✅', name + ' supprimé');
+      })
+      .catch(function() { toast('❌','Erreur connexion Sheets'); });
+  });
 }
 
 function changePin() {
@@ -2188,6 +2190,21 @@ function syncTechsToSheets() {
 }
 
 
+function appConfirm(message, sub, onOk) {
+  var modal = document.getElementById('confirm-modal');
+  document.getElementById('confirm-modal-msg').textContent = message;
+  document.getElementById('confirm-modal-sub').textContent = sub || '';
+  modal.style.display = 'flex';
+  function cleanup() {
+    modal.style.display = 'none';
+    document.getElementById('confirm-modal-ok').onclick = null;
+    document.getElementById('confirm-modal-cancel').onclick = null;
+  }
+  document.getElementById('confirm-modal-ok').onclick = function() { cleanup(); onOk(); };
+  document.getElementById('confirm-modal-cancel').onclick = function() { cleanup(); };
+}
+
+
 function silentPullTechs(callback) {
   if (!state.gsUrl) { if (callback) callback(); return; }
   // Appel dédié getTechs — lit uniquement l'onglet Techniciens dans Sheets
@@ -2382,5 +2399,28 @@ function toast(icon, msg) {
   }
 })();
 </script>
+
+<!-- Modal confirmation custom -->
+<div id="confirm-modal" style="display:none;position:fixed;inset:0;z-index:99999;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;
+    padding:24px;max-width:320px;width:100%;text-align:center">
+    <div id="confirm-modal-msg" style="font-size:15px;font-weight:600;margin-bottom:8px"></div>
+    <div id="confirm-modal-sub" style="font-size:12px;color:var(--muted);margin-bottom:20px"></div>
+    <div style="display:flex;gap:10px">
+      <button id="confirm-modal-cancel" style="flex:1;padding:12px;border-radius:12px;
+        background:rgba(255,255,255,.06);border:1px solid var(--border);
+        color:var(--text);font-size:14px;font-family:inherit;cursor:pointer">
+        Annuler
+      </button>
+      <button id="confirm-modal-ok" style="flex:1;padding:12px;border-radius:12px;
+        background:rgba(220,50,50,.2);border:1px solid rgba(220,50,50,.4);
+        color:#ff6b6b;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">
+        Supprimer
+      </button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
