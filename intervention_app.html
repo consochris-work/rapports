@@ -2133,6 +2133,25 @@ function syncAllToSheets() {
 }
 
 
+function silentPullTechs(callback) {
+  if (!state.gsUrl) { if (callback) callback(); return; }
+  fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error || !data.reports) { if (callback) callback(); return; }
+      // Extraire les noms de techs uniques
+      (data.reports || []).forEach(function(r) {
+        if (r.tech && !state.technicians.includes(r.tech)) {
+          state.technicians.push(r.tech);
+        }
+      });
+      save();
+      if (callback) callback();
+    })
+    .catch(function() { if (callback) callback(); });
+}
+
+
 function silentPull() {
   if (!state.gsUrl) return;
   fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
@@ -2172,7 +2191,7 @@ function silentPull() {
         var overlay = document.getElementById('admin-overlay');
         if (overlay && overlay.classList.contains('open')) {
           renderRecap();
-          toast('🔄', imported + ' nouveau' + (imported > 1 ? 'x' : '') + ' rapport' + (imported > 1 ? 's' : ''));
+          // silencieux — pas de toast
         }
       }
     })
@@ -2292,14 +2311,20 @@ function toast(icon, msg) {
   // Toujours forcer l'URL GS (même si localStorage est ancien)
   state.gsUrl = 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec';
   save();
-  populateTechSelect();
-  if (state.currentTech) {
-    showApp();
+  // Récupérer la liste des techs depuis Sheets pour tous (silencieux)
+  if (state.gsUrl) {
+    silentPullTechs(function() {
+      populateTechSelect();
+      if (state.currentTech) showApp();
+    });
+  } else {
+    populateTechSelect();
+    if (state.currentTech) showApp();
   }
-  // Auto-pull silencieux si admin déjà déverrouillé
+  // Auto-pull complet silencieux si admin déjà déverrouillé
   if (state.adminUnlocked && state.gsUrl) {
-    silentPull();
-    setInterval(silentPull, 5 * 60 * 1000); // toutes les 5 minutes
+    setTimeout(silentPull, 2000); // léger délai pour ne pas bloquer le boot
+    setInterval(silentPull, 5 * 60 * 1000);
   }
 })();
 </script>
