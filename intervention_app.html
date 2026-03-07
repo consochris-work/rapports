@@ -680,7 +680,7 @@ let state = {
   clients: [],
   reports: [],
   adjustments: {},
-  gsUrl: 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec',
+  gsUrl: 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
   pin: '1234',
   accentColor: '#016E8F'
@@ -1323,7 +1323,7 @@ function openAdminOverlay() {
   document.getElementById('admin-overlay').classList.add('open');
   populateRecapMonths();
   const gsInput = document.getElementById('gs-url-input');
-  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec';
+  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec';
   updateGsStatus();
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
@@ -1712,10 +1712,7 @@ function changePin() {
 
 
 // ══════════════════════════════════════════════════
-//  GOOGLE SHEETS SYNC
-//  Google Apps Script ne supporte pas le CORS preflight
-//  → on passe par un GET avec paramètre ?payload=...
-//  → ou POST no-cors (pas de réponse lisible, fire & forget)
+//  GOOGLE SHEETS SYNC — via iframe form (pas de CORS)
 // ══════════════════════════════════════════════════
 function saveGSUrl() {
   state.gsUrl = document.getElementById('gs-url-input').value.trim();
@@ -1730,67 +1727,67 @@ function updateGsStatus() {
   if (!el) return;
   if (!state.gsUrl) { el.textContent = ''; return; }
   el.innerHTML = state.gsSynced
-    ? '<span style="color:var(--green)">✓ Synchronisé</span>'
-    : '<span style="color:var(--orange)">⚠ Non synchronisé — cliquez "Sync complète"</span>';
+    ? '<span style="color:var(--green)">&#10003; Synchronise</span>'
+    : '<span style="color:var(--orange)">&#9888; Non synchronise</span>';
 }
 
-// Envoie via GET (pas de CORS preflight, Google redirige vers doGet)
-async function gsGet(params) {
-  if (!state.gsUrl) return null;
-  const qs = Object.entries(params).map(([k,v]) =>
-    encodeURIComponent(k)+'='+encodeURIComponent(typeof v==='object'?JSON.stringify(v):v)
-  ).join('&');
-  try {
-    const res = await fetch(state.gsUrl + '?' + qs);
-    return await res.json();
-  } catch(e) {
-    console.warn('GS GET failed', e);
-    return null;
+function gsPost(action, data) {
+  if (!state.gsUrl) return;
+  var iframe = document.getElementById('gs-iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'gs-iframe';
+    iframe.name = 'gs-iframe';
+    iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+    document.body.appendChild(iframe);
   }
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = state.gsUrl;
+  form.target = 'gs-iframe';
+  form.style.display = 'none';
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'payload';
+  input.value = JSON.stringify({ action: action, data: data });
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(function() { form.remove(); }, 3000);
 }
 
-async function syncReportToSheets(report) {
+function syncReportToSheets(report) {
   if (!state.gsUrl) return;
-  const payload = Object.assign({}, report, {
+  gsPost('addReport', Object.assign({}, report, {
     photos: report.photos ? report.photos.length : 0
-  });
-  gsGet({ action: 'addReport', data: payload }); // fire & forget
+  }));
 }
 
-async function syncAdjToSheets(reportId, report, validatedHours) {
+function syncAdjToSheets(reportId, report, validatedHours) {
   if (!state.gsUrl) return;
-  gsGet({ action: 'saveAdjustment', data: {
-    reportId,
+  gsPost('saveAdjustment', {
+    reportId: reportId,
     tech: report.tech,
     client: report.client || '',
     date: report.date,
-    validatedHours
-  }});
+    validatedHours: validatedHours
+  });
 }
 
-async function syncAllToSheets() {
-  if (!state.gsUrl) { toast('⚠️','Aucune URL configurée'); return; }
-  const el = document.getElementById('gs-status');
-  if (el) el.innerHTML = '<span style="color:var(--muted)">⏳ Synchronisation en cours…</span>';
-
-  const reportsClean = state.reports.map(r => Object.assign({}, r, {
-    photos: r.photos ? r.photos.length : 0
-  }));
-
-  const result = await gsGet({
-    action: 'syncAll',
-    data: { reports: reportsClean, adjustments: state.adjustments }
+function syncAllToSheets() {
+  if (!state.gsUrl) { toast('⚠️','Aucune URL configuree'); return; }
+  var el = document.getElementById('gs-status');
+  if (el) el.innerHTML = '<span style="color:var(--muted)">&#8987; Envoi en cours...</span>';
+  var reportsClean = state.reports.map(function(r) {
+    return Object.assign({}, r, { photos: r.photos ? r.photos.length : 0 });
   });
-
-  if (result && !result.error) {
+  gsPost('syncAll', { reports: reportsClean, adjustments: state.adjustments });
+  setTimeout(function() {
     state.gsSynced = true;
     save();
     updateGsStatus();
-    toast('✅', `${result.count || reportsClean.length} rapports synchronisés`);
-  } else {
-    if (el) el.innerHTML = '<span style="color:#e8252a">&#x2715; Erreur connexion</span>';
-    toast('❌', result ? result.error : 'Échec de la synchronisation');
-  }
+    toast('✅', reportsClean.length + ' rapports envoyes');
+  }, 4000);
 }
 
 // ══════════════════════════════════════════════════
@@ -1849,7 +1846,7 @@ function toast(icon, msg) {
 (function init() {
   load();
   // Toujours forcer l'URL GS (même si localStorage est ancien)
-  state.gsUrl = 'https://script.google.com/macros/s/AKfycbzf7Q0bdUgbZA9K3K4NaB0FRgzzPF1h0_g9jWssx3KgwrTYPiZX62bZ8NGmDd3PK7JLNQ/exec';
+  state.gsUrl = 'https://script.google.com/macros/s/AKfycbxZRRQ9J3Pd4ntgK413OSBmHbeV2lgqn9b3xZg2KbRX5TNG5lHqq46SKAW0BB9QYCAoRg/exec';
   save();
   populateTechSelect();
   if (state.currentTech) {
