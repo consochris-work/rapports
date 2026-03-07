@@ -109,22 +109,42 @@ select.input-field option{background:#0a0c16;color:var(--text);}
 .empty-text{font-size:14px;}
 
 /* ── NAV ── */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:50;
-  padding:8px 16px calc(8px + var(--safe-bottom));
-  background:rgba(6,8,16,0.92);backdrop-filter:blur(20px);
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:50;
+  height:calc(72px + var(--safe-bottom));
+  padding-bottom:var(--safe-bottom);
+  background:rgba(6,8,16,0.95);backdrop-filter:blur(20px);
   border-top:1px solid var(--border);
-  display:flex;gap:6px;
+  display:flex;align-items:stretch;
 }
-.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding:8px 4px;border-radius:12px;background:none;border:none;
-  color:var(--muted);cursor:pointer;transition:all .2s;font-family:inherit;}
-.nav-btn.active{color:var(--accent2);background:rgba(var(--accent-rgb),.1);}
+.nav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;padding:0 4px;
+  background:none;border:none;
+  color:var(--muted);cursor:pointer;transition:all .2s;font-family:inherit;
+}
+.nav-btn.active{color:var(--accent2);}
 .nav-btn:active{opacity:.7;}
-.nav-icon{font-size:20px;}
-.nav-label{font-size:10px;font-weight:600;letter-spacing:.3px;}
+.nav-icon{font-size:22px;line-height:1;}
+.nav-label{font-size:10px;font-weight:600;letter-spacing:.3px;line-height:1;}
+.nav-fab-wrap{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;padding-bottom:0;
+}
+.nav-fab{
+  width:52px;height:52px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--accent2);color:#fff;
+  box-shadow:0 4px 18px rgba(1,110,143,.6);
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .15s,box-shadow .15s;
+  font-family:inherit;flex-shrink:0;
+}
+.nav-fab:active{transform:scale(.95);}
+.nav-fab.active{box-shadow:0 4px 22px rgba(1,110,143,.8);}
+.nav-fab-label{font-size:10px;font-weight:600;letter-spacing:.3px;color:var(--muted);line-height:1;}
 
 /* ── NEW REPORT FORM ── */
-.form-wrap{flex:1;overflow-y:auto;padding:16px 16px calc(100px + var(--safe-bottom));}
+.form-wrap{flex:1;overflow-y:auto;padding:16px 16px calc(90px + var(--safe-bottom));}
 .form-wrap::-webkit-scrollbar{display:none;}
 .form-section{background:var(--card);border:1px solid var(--border);border-radius:18px;
   padding:16px;margin-bottom:14px;}
@@ -318,6 +338,37 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
 .gap8{gap:8px;}
 .flex{display:flex;}
 .flex-col{flex-direction:column;}
+
+/* ── Grille présence ── */
+.pres-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.pres-table{border-collapse:collapse;min-width:100%;font-size:11px;}
+.pres-table th{
+  background:var(--card);color:var(--muted);font-weight:600;
+  padding:6px 4px;text-align:center;white-space:nowrap;
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:2;
+}
+.pres-table th.tech-col{text-align:left;padding-left:8px;min-width:90px;position:sticky;left:0;z-index:3;background:var(--card);}
+.pres-table td{padding:3px 3px;text-align:center;border-bottom:1px solid var(--border);}
+.pres-table td.tech-col{
+  text-align:left;padding-left:8px;font-weight:600;font-size:11px;
+  white-space:nowrap;position:sticky;left:0;background:var(--bg);z-index:1;
+}
+.pres-table tr:hover td{background:rgba(255,255,255,.04);}
+.pres-cell{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:26px;height:26px;border-radius:6px;cursor:pointer;
+  font-size:10px;font-weight:700;transition:transform .1s;
+}
+.pres-cell:hover{transform:scale(1.15);}
+.pres-cell.has-report{background:#016E8F;color:#fff;}
+.pres-cell.has-multi{background:#2ecc71;color:#000;}
+.pres-cell.no-report{background:rgba(255,255,255,.07);color:var(--muted);}
+.pres-cell.today-col{box-shadow:0 0 0 2px #f97316;}
+.pres-cell.weekend{opacity:.45;}
+.pres-day-hdr.today-hdr{color:#f97316;font-weight:800;}
+.pres-day-hdr.weekend-hdr{color:var(--muted);opacity:.6;}
+.pres-legend{display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);}
+.pres-legend-dot{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle;}
 </style>
 </head>
 <body>
@@ -532,9 +583,12 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
     <button class="nav-btn active" id="nav-dash" onclick="switchView('dash')">
       <span class="nav-icon">🏠</span><span class="nav-label">Accueil</span>
     </button>
-    <button class="nav-btn" id="nav-new" onclick="switchView('new')">
-      <span class="nav-icon">➕</span><span class="nav-label">Nouveau</span>
-    </button>
+    <div class="nav-fab-wrap">
+      <button class="nav-fab" id="nav-new" onclick="switchView('new')">
+        <span style="font-size:26px;line-height:1">＋</span>
+      </button>
+      <span class="nav-fab-label">Nouveau</span>
+    </div>
     <button class="nav-btn" id="nav-hist" onclick="switchView('hist')">
       <span class="nav-icon">📋</span><span class="nav-label">Historique</span>
     </button>
@@ -589,6 +643,7 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
         <button class="atab active" onclick="switchAdminTab(this,'overview')">📊 Vue</button>
         <button class="atab" onclick="switchAdminTab(this,'recap')">📅 Récap mensuel</button>
         <button class="atab" onclick="switchAdminTab(this,'clients')">🏢 Clients</button>
+        <button class="atab" onclick="switchAdminTab(this,'presence')">📆 Présence</button>
         <button class="atab" onclick="switchAdminTab(this,'settings')">⚙️ Réglages</button>
       </div>
       <div class="atab-panel active" id="atab-overview">
@@ -615,6 +670,16 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
       </div>
       <div class="atab-panel" id="atab-clients">
         <div id="client-stats-content"></div>
+      </div>
+      <div class="atab-panel" id="atab-presence">
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+          <select class="period-sel" id="pres-mode" onchange="renderPresence()" style="flex:1;min-width:120px;margin-bottom:0">
+            <option value="week">Semaine en cours</option>
+            <option value="month">Mois en cours</option>
+          </select>
+          <select class="period-sel" id="pres-month-sel" onchange="renderPresence()" style="flex:1;min-width:140px;margin-bottom:0;display:none"></select>
+        </div>
+        <div id="presence-grid"></div>
       </div>
       <div class="atab-panel" id="atab-settings">
         <div class="admin-card">
@@ -681,10 +746,12 @@ let state = {
   clients: [],
   reports: [],
   adjustments: {},
-  gsUrl: 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec',
+  gsUrl: 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
   pin: '1234',
-  accentColor: '#016E8F'
+  accentColor: '#016E8F',
+  adminUnlocked: false,
+  gsToken: 'd9dcebc47ab708e4c785b8fa4b7532290949795121f530ae'
 };
 
 function save() {
@@ -1299,6 +1366,8 @@ function pinKey(k) {
   if (pinBuffer.length === 4) {
     setTimeout(() => {
       if (pinBuffer === state.pin) {
+        state.adminUnlocked = true;
+        save();
         document.getElementById('pin-overlay').classList.remove('open');
         openAdminOverlay();
       } else {
@@ -1323,8 +1392,9 @@ function closePinOverlay() {
 function openAdminOverlay() {
   document.getElementById('admin-overlay').classList.add('open');
   populateRecapMonths();
+  populatePresenceMonths();
   const gsInput = document.getElementById('gs-url-input');
-  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec';
+  if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec';
   updateGsStatus();
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
@@ -1713,6 +1783,155 @@ function changePin() {
 
 
 // ══════════════════════════════════════════════════
+//  PRESENCE GRID
+// ══════════════════════════════════════════════════
+function populatePresenceMonths() {
+  var sel = document.getElementById('pres-month-sel');
+  if (!sel) return;
+  var months = {};
+  state.reports.forEach(function(r) {
+    var d = new Date(r.date);
+    var k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    months[k] = true;
+  });
+  var now = new Date();
+  var nowKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  months[nowKey] = true;
+  var keys = Object.keys(months).sort().reverse();
+  sel.innerHTML = keys.map(function(k) {
+    var parts = k.split('-');
+    var label = new Date(parseInt(parts[0]), parseInt(parts[1])-1, 1)
+      .toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
+    return '<option value="'+k+'"'+(k===nowKey?' selected':'')+'>'+label+'</option>';
+  }).join('');
+}
+
+function renderPresence() {
+  var mode = document.getElementById('pres-mode').value;
+  var monthSel = document.getElementById('pres-month-sel');
+  if (monthSel) monthSel.style.display = mode === 'month' ? '' : 'none';
+
+  // Déterminer les jours à afficher
+  var days = [];
+  var now = new Date();
+
+  if (mode === 'week') {
+    var dow = now.getDay(); // 0=dim
+    var diff = dow === 0 ? -6 : 1 - dow;
+    var monday = new Date(now);
+    monday.setDate(now.getDate() + diff);
+    monday.setHours(0,0,0,0);
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      days.push(d);
+    }
+  } else {
+    var selVal = monthSel ? monthSel.value : '';
+    var parts = selVal ? selVal.split('-') : [now.getFullYear(), now.getMonth()+1];
+    var y = parseInt(parts[0]), m = parseInt(parts[1]) - 1;
+    var daysInMonth = new Date(y, m+1, 0).getDate();
+    for (var j = 1; j <= daysInMonth; j++) {
+      days.push(new Date(y, m, j));
+    }
+  }
+
+  var todayStr = now.toISOString().slice(0,10);
+
+  // Index rapports par tech+date
+  var idx = {};
+  state.reports.forEach(function(r) {
+    var key = r.tech + '|' + r.date;
+    if (!idx[key]) idx[key] = [];
+    idx[key].push(r);
+  });
+
+  // Liste des techs actifs (qui ont au moins un rapport dans la période ou dans la liste)
+  var techs = state.technicians.slice();
+  // Ajouter techs qui ont des rapports mais pas dans la liste
+  state.reports.forEach(function(r) {
+    if (!techs.includes(r.tech)) techs.push(r.tech);
+  });
+  if (techs.length === 0) {
+    document.getElementById('presence-grid').innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">Aucun technicien</div></div>';
+    return;
+  }
+
+  var FR_DAYS = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  var FR_DAYS_SHORT = ['D','L','M','M','J','V','S'];
+
+  // Header jours
+  var headerCells = days.map(function(d) {
+    var ds = d.toISOString().slice(0,10);
+    var isToday = ds === todayStr;
+    var isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    var cls = 'pres-day-hdr' + (isToday ? ' today-hdr' : '') + (isWeekend ? ' weekend-hdr' : '');
+    var label = mode === 'week'
+      ? FR_DAYS[d.getDay()] + '<br>' + d.getDate()
+      : (isWeekend ? FR_DAYS_SHORT[d.getDay()] : FR_DAYS_SHORT[d.getDay()]) + '<br>' + d.getDate();
+    return '<th class="' + cls + '">' + label + '</th>';
+  }).join('');
+
+  // Lignes par tech
+  var rows = techs.map(function(tech) {
+    var initials = tech.split(' ').map(function(w){return w[0]||'';}).join('').toUpperCase().slice(0,2);
+    var color = techColor(tech);
+
+    var cells = days.map(function(d) {
+      var ds = d.toISOString().slice(0,10);
+      var isToday = ds === todayStr;
+      var isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      var reports = idx[tech + '|' + ds] || [];
+      var count = reports.length;
+
+      var cellCls = 'pres-cell';
+      if (count > 1) cellCls += ' has-multi';
+      else if (count === 1) cellCls += ' has-report';
+      else cellCls += ' no-report';
+      if (isToday) cellCls += ' today-col';
+      if (isWeekend && count === 0) cellCls += ' weekend';
+
+      var label = count === 0 ? '·' : count === 1 ? '✓' : count;
+      var cellStyle = count > 0 ? 'background:' + color + ';color:#fff;' : '';
+      if (count > 1) cellStyle = 'background:#2ecc71;color:#000;';
+
+      var onclick = '';
+      if (count === 1) {
+        onclick = 'openDetail(\'' + reports[0].id + '\')';
+      } else if (count > 1) {
+        // Ouvrir le premier rapport (TODO: liste)
+        onclick = 'openDetail(\'' + reports[0].id + '\')';
+      }
+
+      return '<td><div class="' + cellCls + '" style="' + cellStyle + '"'
+        + (onclick ? ' onclick="' + onclick + '"' : '') + '>'
+        + label + '</div></td>';
+    }).join('');
+
+    return '<tr>'
+      + '<td class="tech-col"><span style="display:inline-flex;align-items:center;gap:6px">'
+      + '<span style="width:22px;height:22px;border-radius:50%;background:'+color+';color:#fff;font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center">'+initials+'</span>'
+      + tech.split(' ')[0]
+      + '</span></td>'
+      + cells
+      + '</tr>';
+  }).join('');
+
+  var html = '<div class="pres-wrap"><table class="pres-table">'
+    + '<thead><tr><th class="tech-col">Technicien</th>' + headerCells + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>'
+    + '<div class="pres-legend">'
+    + '<span><span class="pres-legend-dot" style="background:#016E8F"></span>1 rapport</span>'
+    + '<span><span class="pres-legend-dot" style="background:#2ecc71"></span>2+ rapports</span>'
+    + '<span><span class="pres-legend-dot" style="background:rgba(255,255,255,.07)"></span>Aucun</span>'
+    + '<span><span class="pres-legend-dot" style="box-shadow:0 0 0 2px #f97316;background:transparent"></span>Aujourd\'hui</span>'
+    + '</div>';
+
+  document.getElementById('presence-grid').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════════
 //  GOOGLE SHEETS SYNC — via iframe form (pas de CORS)
 // ══════════════════════════════════════════════════
 function saveGSUrl() {
@@ -1750,7 +1969,7 @@ function gsPost(action, data) {
   var input = document.createElement('input');
   input.type = 'hidden';
   input.name = 'payload';
-  input.value = JSON.stringify({ action: action, data: data });
+  input.value = JSON.stringify({ action: action, data: data, token: state.gsToken });
   form.appendChild(input);
   document.body.appendChild(form);
   form.submit();
@@ -1792,12 +2011,59 @@ function syncAllToSheets() {
 }
 
 
+function silentPull() {
+  if (!state.gsUrl) return;
+  fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error || !data.reports) return;
+      var imported = 0;
+      var existingIds = state.reports.map(function(r) { return r.id; });
+      (data.reports || []).forEach(function(r) {
+        var report = {
+          id:        String(r.id),
+          date:      r.date,
+          tech:      r.tech,
+          client:    r.client || '',
+          atelier:   r.atelier || false,
+          hours:     parseFloat(r.hours) || 0,
+          desc:      r.desc || '',
+          photos:    [],
+          checklist: [],
+          createdAt: r.createdAt || new Date().toISOString()
+        };
+        if (!existingIds.includes(report.id)) {
+          state.reports.push(report);
+          existingIds.push(report.id);
+          imported++;
+        }
+        if (report.tech && !state.technicians.includes(report.tech)) {
+          state.technicians.push(report.tech);
+        }
+      });
+      Object.keys(data.adjustments || {}).forEach(function(k) {
+        state.adjustments[k] = data.adjustments[k];
+      });
+      if (imported > 0) {
+        save();
+        // Rafraîchir silencieusement les vues admin si elles sont ouvertes
+        var overlay = document.getElementById('admin-overlay');
+        if (overlay && overlay.classList.contains('open')) {
+          renderRecap();
+          toast('🔄', imported + ' nouveau' + (imported > 1 ? 'x' : '') + ' rapport' + (imported > 1 ? 's' : ''));
+        }
+      }
+    })
+    .catch(function() {}); // silencieux en cas d'erreur réseau
+}
+
+
 function pullFromSheets() {
   if (!state.gsUrl) { toast('⚠️','Aucune URL configuree'); return; }
   var el = document.getElementById('gs-status');
   if (el) el.innerHTML = '<span style="color:var(--muted)">&#8987; Chargement...</span>';
 
-  fetch(state.gsUrl + '?action=getAll')
+  fetch(state.gsUrl + '?action=getAll&token=' + encodeURIComponent(state.gsToken))
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { toast('❌', data.error); return; }
@@ -1902,11 +2168,16 @@ function toast(icon, msg) {
 (function init() {
   load();
   // Toujours forcer l'URL GS (même si localStorage est ancien)
-  state.gsUrl = 'https://script.google.com/macros/s/AKfycbxv5P0lcxyGLuk5JexKgvXvh83gBwp38zbxFyFF1ecr43cIPAPBjYfRqHqrbsPrmKT2Cg/exec';
+  state.gsUrl = 'https://script.google.com/macros/s/AKfycbzpVemLoNsjcXsxJ9x20bkCjG9rD4ydfF0007R9umIeGOeTcCZN4zbf2Ur5Zn8ZmJeYAA/exec';
   save();
   populateTechSelect();
   if (state.currentTech) {
     showApp();
+  }
+  // Auto-pull silencieux si admin déjà déverrouillé
+  if (state.adminUnlocked && state.gsUrl) {
+    silentPull();
+    setInterval(silentPull, 5 * 60 * 1000); // toutes les 5 minutes
   }
 })();
 </script>
