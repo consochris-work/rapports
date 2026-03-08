@@ -826,6 +826,27 @@ textarea.input-field{resize:none;min-height:90px;line-height:1.6;}
           <div id="gs-status" style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center"></div>
         </div>
         <div class="admin-card">
+          <div class="admin-card-title">☁️ Nextcloud Photos</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+            Les photos seront uploadées automatiquement et un lien public créé pour chaque rapport.
+          </div>
+          <div class="form-row" style="margin-bottom:8px">
+            <input class="input-field" id="nc-url-input" placeholder="https://cloud.votreserveur.fr" style="font-size:12px">
+          </div>
+          <div class="form-row" style="margin-bottom:8px">
+            <input class="input-field" id="nc-user-input" placeholder="Utilisateur (ex: rapports)" style="font-size:12px">
+          </div>
+          <div class="form-row" style="margin-bottom:8px">
+            <input class="input-field" id="nc-token-input" type="password" placeholder="Token d'application Nextcloud" style="font-size:12px">
+          </div>
+          <div class="form-row" style="margin-bottom:8px">
+            <input class="input-field" id="nc-folder-input" placeholder="Dossier racine (ex: Rapports)" style="font-size:12px">
+          </div>
+          <button class="btn-primary" style="width:100%" onclick="saveNCConfig()">💾 Enregistrer config Nextcloud</button>
+          <button class="btn-secondary" style="width:100%;margin-top:8px" onclick="testNCConnection()">🔍 Tester la connexion</button>
+          <div id="nc-status" style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center"></div>
+        </div>
+        <div class="admin-card">
           <div class="admin-card-title">🔑 Code PIN</div>
           <div class="input-inline">
             <input class="input-field" id="new-pin-input" placeholder="Nouveau code 4 chiffres" type="password" maxlength="4" inputmode="numeric">
@@ -855,6 +876,11 @@ let state = {
   adjustments: {},
   gsUrl: 'https://script.google.com/macros/s/AKfycbwxmBEY_utP0B0D7zwMpOJz5Co_m3rojOU41kkx4kGzia2HD5RecAXbn2nN5_w7y2xgKQ/exec',
   gsSynced: false,  // {reportId: adjustedHours} — admin only, invisible to techs
+  // Nextcloud
+  ncUrl: '',        // ex: https://cloud.monserveur.fr
+  ncUser: '',       // login du compte service
+  ncToken: '',      // token d'application Nextcloud
+  ncFolder: 'Rapports',  // dossier racine dans Nextcloud
   pin: '1234',
   accentColor: '#016E8F',
   adminUnlocked: false,
@@ -1032,17 +1058,14 @@ function initNewForm() {
   resetChecklist();
 }
 
-let photos = [];
+let photos = []; // [{file, preview, name}]
 
 function addPhotos(input) {
   const files = Array.from(input.files);
   files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      photos.push({ data: e.target.result, name: file.name });
-      renderPhotoGrid();
-    };
-    reader.readAsDataURL(file);
+    const preview = URL.createObjectURL(file);
+    photos.push({ file, preview, name: file.name });
+    renderPhotoGrid();
   });
   input.value = '';
 }
@@ -1051,7 +1074,7 @@ function renderPhotoGrid() {
   const grid = document.getElementById('photo-grid');
   grid.innerHTML = photos.map((p,i) => `
     <div class="photo-thumb">
-      <img src="${p.data}" alt="photo">
+      <img src="${p.preview}" alt="photo">
       <button class="photo-del" onclick="removePhoto(${i})">✕</button>
     </div>
   `).join('');
@@ -1349,6 +1372,136 @@ function getChecklistItems() {
   return checkItems.filter(i=>i.label).map(i=>({label:i.label,done:i.done}));
 }
 
+// ══════════════════════════════════════════════════
+//  NEXTCLOUD
+// ══════════════════════════════════════════════════
+
+function ncAuthHeader() {
+  // Token d'application Nextcloud → Basic auth avec user:token
+  return 'Basic ' + btoa(state.ncUser + ':' + state.ncToken);
+}
+
+async function ncRequest(method, path, body, contentType) {
+  const url = state.ncUrl.replace(/\/$/, '') + path;
+  const headers = { 'Authorization': ncAuthHeader() };
+  if (contentType) headers['Content-Type'] = contentType;
+  const res = await fetch(url, { method, headers, body });
+  return res;
+}
+
+async function ncCreateFolder(path) {
+  // MKCOL sur WebDAV — ignore 405 (dossier existe déjà)
+  const res = await ncRequest('MKCOL', '/remote.php/dav/files/' + encodeURIComponent(state.ncUser) + path);
+  if (res.status !== 201 && res.status !== 405 && res.status !== 301) {
+    throw new Error('MKCOL ' + path + ' → ' + res.status);
+  }
+}
+
+async function ncUploadFile(path, file) {
+  const res = await ncRequest('PUT', '/remote.php/dav/files/' + encodeURIComponent(state.ncUser) + path, file, file.type || 'application/octet-stream');
+  if (!res.ok) throw new Error('PUT ' + path + ' → ' + res.status);
+}
+
+async function ncCreateShare(path) {
+  // OCS Share API : crée un lien public (shareType=3)
+  const url = state.ncUrl.replace(/\/$/, '') + '/ocs/v2.php/apps/files_sharing/api/v1/shares';
+  const body = new URLSearchParams({ path, shareType: '3', permissions: '1' });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': ncAuthHeader(),
+      'OCS-APIREQUEST': 'true',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
+  if (!res.ok) throw new Error('Share API → ' + res.status);
+  const text = await res.text();
+  // Parser le token depuis la réponse XML/JSON
+  let token = '';
+  const match = text.match(/<token>([^<]+)<\/token>/);
+  if (match) token = match[1];
+  else {
+    try { const j = JSON.parse(text); token = j.ocs?.data?.token || ''; } catch(e) {}
+  }
+  if (!token) throw new Error('Pas de token dans la réponse Share API');
+  return state.ncUrl.replace(/\/$/, '') + '/s/' + token;
+}
+
+async function uploadPhotosToNextcloud(reportId, photoList) {
+  const rootFolder = '/' + (state.ncFolder || 'Rapports');
+  const reportFolder = rootFolder + '/' + reportId;
+
+  // Créer les dossiers
+  try { await ncCreateFolder(rootFolder); } catch(e) {}
+  await ncCreateFolder(reportFolder);
+
+  const links = [];
+  for (let i = 0; i < photoList.length; i++) {
+    const p = photoList[i];
+    const ext = p.name.split('.').pop() || 'jpg';
+    const filePath = reportFolder + '/photo_' + (i+1) + '.' + ext;
+    await ncUploadFile(filePath, p.file);
+    const link = await ncCreateShare(filePath);
+    // Transformer en lien direct vers la preview (download)
+    links.push(link + '/download');
+  }
+  return links;
+}
+
+async function saveNCConfig() {
+  const url = document.getElementById('nc-url-input').value.trim();
+  const user = document.getElementById('nc-user-input').value.trim();
+  const token = document.getElementById('nc-token-input').value.trim();
+  const folder = document.getElementById('nc-folder-input').value.trim() || 'Rapports';
+  if (!url || !user || !token) { toast('⚠️','Remplissez tous les champs Nextcloud'); return; }
+  state.ncUrl = url;
+  state.ncUser = user;
+  state.ncToken = token;
+  state.ncFolder = folder;
+  save();
+  toast('✅','Config Nextcloud enregistrée');
+  document.getElementById('nc-status').textContent = '✅ Configuration sauvegardée';
+}
+
+async function testNCConnection() {
+  const statusEl = document.getElementById('nc-status');
+  statusEl.textContent = '🔄 Test en cours…';
+  const url = document.getElementById('nc-url-input').value.trim() || state.ncUrl;
+  const user = document.getElementById('nc-user-input').value.trim() || state.ncUser;
+  const token = document.getElementById('nc-token-input').value.trim() || state.ncToken;
+  if (!url || !user || !token) { statusEl.textContent = '⚠️ Config incomplète'; return; }
+  try {
+    const res = await fetch(url.replace(/\/$/, '') + '/remote.php/dav/files/' + encodeURIComponent(user) + '/', {
+      method: 'PROPFIND',
+      headers: {
+        'Authorization': 'Basic ' + btoa(user + ':' + token),
+        'Depth': '0'
+      }
+    });
+    if (res.status === 207 || res.status === 200) {
+      statusEl.textContent = '✅ Connexion réussie !';
+      statusEl.style.color = 'var(--green)';
+    } else if (res.status === 401) {
+      statusEl.textContent = '❌ Authentification refusée (vérifiez user/token)';
+      statusEl.style.color = 'var(--red)';
+    } else if (res.status === 0 || res.type === 'opaque') {
+      statusEl.textContent = '⚠️ CORS bloqué — configurez allow_origin sur Nextcloud';
+      statusEl.style.color = 'var(--orange)';
+    } else {
+      statusEl.textContent = '❌ Erreur ' + res.status;
+      statusEl.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    if (e.message && e.message.includes('Failed to fetch')) {
+      statusEl.textContent = '⚠️ Inaccessible (CORS ou réseau). Voir instructions.';
+    } else {
+      statusEl.textContent = '❌ ' + e.message;
+    }
+    statusEl.style.color = 'var(--orange)';
+  }
+}
+
 async function submitReport() {
   const client = document.getElementById('f-client').value.trim();
   const desc = document.getElementById('f-desc').value.trim();
@@ -1375,9 +1528,21 @@ async function submitReport() {
     panier: hasPanier,
     nuitee: hasNuitee,
     checklist: getChecklistItems(),
-    photos: photos.map(p => p.data),
+    photos: [],       // liens publics Nextcloud (ou vide)
     createdAt: new Date().toISOString()
   };
+
+  // Upload photos vers Nextcloud si configuré
+  if (photos.length > 0 && state.ncUrl && state.ncToken) {
+    btn.innerHTML = '<div class="spinner"></div><span>Upload photos…</span>';
+    try {
+      const links = await uploadPhotosToNextcloud(report.id, photos);
+      report.photos = links;
+    } catch(e) {
+      console.warn('Nextcloud upload failed:', e);
+      toast('⚠️','Photos non uploadées (Nextcloud indisponible)');
+    }
+  }
 
   state.reports.push(report);
   save();
@@ -1482,9 +1647,10 @@ function openDetail(id) {
       <div class="detail-section-title">Photos (${r.photos.length})</div>
       <div class="detail-photos">${r.photos.map((p,i)=>`
         <div class="detail-photo" onclick="openFullscreen('${id}',${i})">
-          <img src="${p}" alt="photo ${i+1}">
+          <img src="${p}" alt="photo ${i+1}" onerror="this.parentElement.style.opacity='.4';this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 24 24\\'><text y=\\'18\\' font-size=\\'18\\'>📷</text></svg>'">
         </div>`).join('')}
       </div>
+      ${r.photos.every(p=>p.startsWith('http')) ? `<a href="${r.photos[0].replace('/download','')}" target="_blank" style="display:block;text-align:center;font-size:11px;color:var(--accent2);margin-top:6px;text-decoration:none">☁️ Voir le dossier Nextcloud</a>` : ''}
     </div>`;
   }
 
@@ -1591,6 +1757,20 @@ function openAdminOverlay() {
   const gsInput = document.getElementById('gs-url-input');
   if (gsInput) gsInput.value = state.gsUrl || 'https://script.google.com/macros/s/AKfycbwxmBEY_utP0B0D7zwMpOJz5Co_m3rojOU41kkx4kGzia2HD5RecAXbn2nN5_w7y2xgKQ/exec';
   updateGsStatus();
+  // Nextcloud
+  const ncUrlEl = document.getElementById('nc-url-input');
+  const ncUserEl = document.getElementById('nc-user-input');
+  const ncTokenEl = document.getElementById('nc-token-input');
+  const ncFolderEl = document.getElementById('nc-folder-input');
+  if (ncUrlEl) ncUrlEl.value = state.ncUrl || '';
+  if (ncUserEl) ncUserEl.value = state.ncUser || '';
+  if (ncTokenEl) ncTokenEl.value = state.ncToken || '';
+  if (ncFolderEl) ncFolderEl.value = state.ncFolder || 'Rapports';
+  const ncStatusEl = document.getElementById('nc-status');
+  if (ncStatusEl) {
+    ncStatusEl.style.color = 'var(--muted)';
+    ncStatusEl.textContent = state.ncUrl ? ('☁️ Configuré : ' + state.ncUrl) : '⚠️ Non configuré';
+  }
   // activate first tab
   const firstTab = document.querySelector('#admin-overlay .atab');
   switchAdminTab(firstTab, 'overview');
@@ -1723,6 +1903,8 @@ function renderRecap() {
   const totalDeclared = reports.reduce((s,r) => s + parseFloat(r.hours||0), 0);
   const totalValidated = reports.reduce((s,r) => s + effectiveHours(r), 0);
   const hasAdj = reports.some(r => state.adjustments['r_'+r.id] !== undefined);
+  const totalPanier = reports.filter(r => r.panier).length;
+  const totalNuitee = reports.filter(r => r.nuitee).length;
   document.getElementById('recap-summary').innerHTML = `
     <div class="stat-card" style="flex:1;padding:10px">
       <div class="stat-val" style="font-size:16px">${reports.length}</div>
@@ -1735,6 +1917,14 @@ function renderRecap() {
     ${hasAdj ? `<div class="stat-card" style="flex:1;padding:10px;border-color:rgba(249,115,22,.4)">
       <div class="stat-val" style="font-size:16px;color:var(--orange)">${totalValidated.toFixed(2)}h</div>
       <div class="stat-lbl">Validées</div>
+    </div>` : ''}
+    ${totalPanier > 0 ? `<div class="stat-card" style="flex:1;padding:10px;border-color:rgba(34,197,94,.3)">
+      <div class="stat-val" style="font-size:16px;color:#4ade80">${totalPanier}</div>
+      <div class="stat-lbl">🍽 Paniers</div>
+    </div>` : ''}
+    ${totalNuitee > 0 ? `<div class="stat-card" style="flex:1;padding:10px;border-color:rgba(139,92,246,.3)">
+      <div class="stat-val" style="font-size:16px;color:#a78bfa">${totalNuitee}</div>
+      <div class="stat-lbl">🌙 Nuitées</div>
     </div>` : ''}
   `;
 
@@ -1755,6 +1945,8 @@ function renderRecap() {
     const declaredTotal = techReports.reduce((s,r) => s + parseFloat(r.hours||0), 0);
     const validatedTotal = techReports.reduce((s,r) => s + effectiveHours(r), 0);
     const hasAdjTech = techReports.some(r => state.adjustments['r_'+r.id] !== undefined);
+    const panierCount = techReports.filter(r => r.panier).length;
+    const nuiteeCount = techReports.filter(r => r.nuitee).length;
 
     html += `<div class="admin-card" style="padding:0;overflow:hidden">
       <!-- Tech header -->
@@ -1765,7 +1957,11 @@ function renderRecap() {
           color:white;flex-shrink:0">${techInitials(tech)}</div>
         <div style="flex:1">
           <div style="font-weight:700;font-size:13px">${esc(tech)}</div>
-          <div style="font-size:11px;color:var(--muted)">${techReports.length} intervention${techReports.length>1?'s':''}</div>
+          <div style="font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+            <span>${techReports.length} intervention${techReports.length>1?'s':''}</span>
+            ${panierCount > 0 ? `<span style="color:#4ade80">🍽 ${panierCount} panier${panierCount>1?'s':''}</span>` : ''}
+            ${nuiteeCount > 0 ? `<span style="color:#a78bfa">🌙 ${nuiteeCount} nuitée${nuiteeCount>1?'s':''}</span>` : ''}
+          </div>
         </div>
         <div style="text-align:right">
           <div style="font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:var(--accent2)">${declaredTotal.toFixed(2)}h</div>
@@ -1794,6 +1990,8 @@ function renderRecap() {
         <div style="display:flex;align-items:center;gap:8px">
           <span style="font-size:11px;color:var(--muted);flex:1">${esc((r.desc||'').slice(0,50))}${r.desc&&r.desc.length>50?'…':''}</span>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            ${r.panier ? `<span style="font-size:10px;background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3);border-radius:6px;padding:2px 6px">🍽 Panier</span>` : ''}
+            ${r.nuitee ? `<span style="font-size:10px;background:rgba(139,92,246,.15);color:#a78bfa;border:1px solid rgba(139,92,246,.3);border-radius:6px;padding:2px 6px">🌙 Nuitée</span>` : ''}
             <span style="font-family:'DM Mono',monospace;font-size:12px;
               color:${isAdj?'rgba(240,242,248,.35)':'var(--accent2)'};
               ${isAdj?'text-decoration:line-through':''}">${declared.toFixed(2)}h</span>
@@ -2160,8 +2358,12 @@ function renderPresence() {
       days.push(d);
     }
   } else {
+    // S'assurer que le select est peuplé avant de lire sa valeur
+    if (monthSel && monthSel.options.length === 0) populatePresenceMonths();
     var selVal = monthSel ? monthSel.value : '';
-    var parts = selVal ? selVal.split('-') : [now.getFullYear(), now.getMonth()+1];
+    var nowKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    if (!selVal) selVal = nowKey;
+    var parts = selVal.split('-');
     var y = parseInt(parts[0]), m = parseInt(parts[1]) - 1;
     var daysInMonth = new Date(y, m+1, 0).getDate();
     for (var j = 1; j <= daysInMonth; j++) {
