@@ -1001,8 +1001,8 @@ function reportCard(r) {
     <div class="rc-footer">
       <div class="rc-badge">⏱ ${parseFloat(r.hours||0).toFixed(1)}h</div>
       ${r.motorHours>0?`<div class="rc-badge rc-badge-orange">🔩 ${r.motorHours}h moto</div>`:''}
-      \${r.nuitee?\`<div class="rc-badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)">🌙 Nuitée</div>\`:''}
-      \${r.panier?\`<div class="rc-badge" style="background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)">🍽 Panier</div>\`:''}
+      ${r.nuitee ? `<div class="rc-badge" style="background:rgba(99,102,241,.15);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)">🌙 Nuitée</div>` : ''}
+      ${r.panier ? `<div class="rc-badge" style="background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3)">🍽 Panier</div>` : ''}
       ${photos>0?`<div class="rc-photos">📷 ${photos} photo${photos>1?'s':''}</div>`:''}
     </div>
   </div>`;
