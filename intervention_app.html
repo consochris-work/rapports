@@ -1211,15 +1211,16 @@ function selectClient(name, isNew) {
   }
 }
 
-function togglePanierTech(i) {
-  var name = state.technicians[i];
-  var idx = (state.panierTechs||[]).indexOf(name);
+function togglePanierTech(name) {
   if (!state.panierTechs) state.panierTechs = [];
+  var idx = state.panierTechs.indexOf(name);
   if (idx === -1) { state.panierTechs.push(name); }
   else { state.panierTechs.splice(idx, 1); }
   save();
-  forceSyncTechs(true);
+  // Re-render local immédiatement (sans recharger Sheets)
   _renderTechListLocal();
+  // Sync vers Sheets en arrière-plan
+  forceSyncTechs(true);
 }
 
 
@@ -2055,7 +2056,7 @@ function renderTechListAdmin() {
       + '<span style="font-size:13px">'+esc(t)+'</span>'
       + '</div>'
       + '<div style="display:flex;align-items:center;gap:8px">'
-      + '<button onclick="togglePanierTech('+i+')" title="Panier repas" style="background:'+(isPanier?'rgba(1,110,143,.25)':'rgba(255,255,255,.06)')+';border:1px solid '+(isPanier?'var(--accent2)':'var(--border)')+';border-radius:8px;color:'+(isPanier?'var(--accent2)':'var(--muted)')+';cursor:pointer;font-size:12px;padding:4px 8px;font-family:inherit">🍽</button>'
+      + '<button onclick="togglePanierTech(\''+t.replace(/\'/g,"\\'")+'\')" title="Panier repas" style="background:'+(isPanier?'rgba(1,110,143,.25)':'rgba(255,255,255,.06)')+';border:1px solid '+(isPanier?'var(--accent2)':'var(--border)')+';border-radius:8px;color:'+(isPanier?'var(--accent2)':'var(--muted)')+';cursor:pointer;font-size:12px;padding:4px 8px;font-family:inherit">🍽</button>'
       + '<button onclick="removeTech('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;">✕</button>'
       + '</div>'
       + '</div>';
@@ -2390,7 +2391,7 @@ function bootFromSheets(callback) {
       if (data.technicians && data.technicians.length > 0) {
         state.technicians = data.technicians;
       }
-      if (data.panierTechs) {
+      if (data.panierTechs && data.panierTechs.length > 0) {
         state.panierTechs = data.panierTechs;
       }
 
