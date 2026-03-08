@@ -1217,9 +1217,7 @@ function togglePanierTech(name) {
   if (idx === -1) { state.panierTechs.push(name); }
   else { state.panierTechs.splice(idx, 1); }
   save();
-  // Re-render local immédiatement (sans recharger Sheets)
-  _renderTechListLocal();
-  // Sync vers Sheets en arrière-plan
+  renderTechListAdmin();
   forceSyncTechs(true);
 }
 
